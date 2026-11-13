@@ -1,0 +1,4 @@
+# Turn on CSI in the Wi-Fi driver (off by default)
+CONFIG_ESP_WIFI_CSI_ENABLED=y
+# Print over the ESP32-C3's built-in USB port (/dev/cu.usbmodem...)
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
