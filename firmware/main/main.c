@@ -15,8 +15,8 @@
 #include "esp_wifi.h"
 #include "ping/ping_sock.h"
 
-#define WIFI_SSID "network name"
-#define WIFI_PASSWORD "password"
+#define WIFI_SSID "aa"
+#define WIFI_PASSWORD "aa"
 #define PINGS_PER_SECOND 100
 
 static const char *TAG = "csi";

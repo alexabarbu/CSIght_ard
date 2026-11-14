@@ -1,99 +1,52 @@
-"""Record a labeled CSI session to data/<label>.csv for later training.
+# Records CSI from the ESP32 into data/<label>_<n>.csv
+# Usage: python record.py <label> <seconds>     e.g. python record.py walking 20
+# Each run gets a new file: walking_1.csv, walking_2.csv, ...
+#
+# Each row is one raw packet: time,rssi,v0,...,v127 (the same values the
+# firmware prints in a CSI_DATA line). train.py turns these raw per-packet
+# rows into windowed features itself -- see features.load_raw_session().
 
-Usage:
-    python record.py empty --port /dev/ttyACM0 --seconds 180
-    python record.py walking --port /dev/ttyACM0 --seconds 180
+import os, sys, time
+import serial
 
-Run this a few separate times per label (a few minutes each) rather than once
-for a long time -- train.py splits train/test by recording session, so having
-several distinct sessions per label is what makes that split meaningful.
-"""
+PORT = "/dev/cu.usbmodem101"
+label, seconds = sys.argv[1], int(sys.argv[2])
 
-import argparse
-import os
-import time
+# Pick the next free file name
+os.makedirs("data", exist_ok=True)
+n = 1
+while os.path.exists(f"data/{label}_{n}.csv"):
+    n += 1
+path = f"data/{label}_{n}.csv"
 
-import pandas as pd
+# Open the port without toggling DTR/RTS (that would reset the ESP32)
+ser = serial.Serial()
+ser.port, ser.baudrate, ser.timeout = PORT, 115200, 1
+ser.dtr = ser.rts = False
+ser.open()
 
-from features import (
-    DEFAULT_STEP_SECONDS,
-    DEFAULT_WINDOW_SECONDS,
-    FEATURE_NAMES,
-    extract_features,
-    sliding_windows,
-)
-from read_csi import DEFAULT_BAUD, read_csi
+for i in range(5, 0, -1):
+    print(f"Get in position... {i}")
+    time.sleep(1)
+ser.reset_input_buffer()  # throw away what arrived during the countdown
+print(f"RECORDING '{label}' for {seconds} s -> {path}")
 
-LABELS = ("empty", "standing", "walking")
-
-
-def record_session(
-    label: str,
-    seconds: int,
-    port: str,
-    baud: int = DEFAULT_BAUD,
-    out_dir: str = "data",
-    window_seconds: float = DEFAULT_WINDOW_SECONDS,
-    step_seconds: float = DEFAULT_STEP_SECONDS,
-    session_id: str = None,
-) -> None:
-    if label not in LABELS:
-        raise ValueError(f"label must be one of {LABELS}, got {label!r}")
-
-    os.makedirs(out_dir, exist_ok=True)
-    session_id = session_id or f"{label}_{int(time.time())}"
-    out_path = os.path.join(out_dir, f"{label}.csv")
-    write_header = not os.path.exists(out_path)
-    columns = ["label", "session_id", "t"] + list(FEATURE_NAMES)
-
-    deadline = time.time() + seconds
-    packets_seen = 0
-    rows_written = 0
-
-    def timed_packets():
-        nonlocal packets_seen
-        for packet in read_csi(port, baud):
-            packets_seen += 1
-            if packet[0] >= deadline:
-                return
-            yield packet
-
-    windows = sliding_windows(timed_packets(), window_seconds, step_seconds)
-    for window in windows:
-        feats = extract_features(window)
-        if feats["n_packets"] == 0:
+count = 0
+start = time.time()
+with open(path, "w") as f:
+    f.write("time,rssi," + ",".join(f"v{i}" for i in range(128)) + "\n")
+    while time.time() - start < seconds:
+        line = ser.readline().decode(errors="ignore").strip()
+        if not line.startswith("CSI_DATA"):
             continue
+        # CSI_DATA,<rssi>,<len>,[v0,...,v127]
+        _, rssi, _, values = line.split(",", 3)
+        values = values.strip("[]")
+        if values.count(",") != 127:  # broken line, skip it
+            continue
+        f.write(f"{time.time() - start:.3f},{rssi},{values}\n")
+        count += 1
 
-        row = {"label": label, "session_id": session_id, "t": time.time()}
-        row.update(feats)
-        pd.DataFrame([row], columns=columns).to_csv(
-            out_path, mode="a", header=write_header, index=False
-        )
-        write_header = False
-        rows_written += 1
-
-    print(f"session {session_id}: wrote {rows_written} rows from {packets_seen} packets to {out_path}")
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Record a labeled CSI session for training.")
-    parser.add_argument("label", choices=LABELS)
-    parser.add_argument("--port", required=True, help="Serial port, e.g. /dev/ttyACM0 or COM5")
-    parser.add_argument("--seconds", type=int, default=180)
-    parser.add_argument("--baud", type=int, default=DEFAULT_BAUD)
-    parser.add_argument("--out-dir", default="data")
-    parser.add_argument("--session-id", default=None)
-    args = parser.parse_args()
-
-    record_session(
-        args.label,
-        args.seconds,
-        args.port,
-        baud=args.baud,
-        out_dir=args.out_dir,
-        session_id=args.session_id,
-    )
-
-
-if __name__ == "__main__":
-    main()
+print(f"Done: {count} packets (~{count / seconds:.0f} per second) saved to {path}")
+if count == 0:
+    print("No CSI received! Is the hotspot on and the ESP32 connected? Try 'make read'.")
