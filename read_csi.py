@@ -22,6 +22,16 @@ DEFAULT_BAUD = 921600
 LINE_RE = re.compile(r"^CSI_DATA,(-?\d+),(\d+),\[(.*)\]\s*$")
 
 
+def values_to_amplitudes(values) -> np.ndarray:
+    """Turn a flat list of (imaginary, real) byte pairs into one amplitude
+    per subcarrier. Shared by the live serial parser and by code that reads
+    the raw per-packet CSVs record.py writes (same value layout either way)."""
+    pairs = np.asarray(values, dtype=np.float64)
+    imag = pairs[0::2]
+    real = pairs[1::2]
+    return np.sqrt(imag**2 + real**2)
+
+
 def parse_csi_line(line: str) -> Optional[Tuple[int, np.ndarray]]:
     """Parse one CSI_DATA line into (rssi, amplitudes).
 
@@ -44,10 +54,7 @@ def parse_csi_line(line: str) -> Optional[Tuple[int, np.ndarray]]:
     if len(values) != declared_len or len(values) % 2 != 0:
         return None
 
-    pairs = np.asarray(values, dtype=np.float64)
-    imag = pairs[0::2]
-    real = pairs[1::2]
-    amplitudes = np.sqrt(imag**2 + real**2)
+    amplitudes = values_to_amplitudes(values)
     return rssi, amplitudes
 
 
