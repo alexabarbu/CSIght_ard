@@ -1,6 +1,10 @@
 # Records CSI from the ESP32 into data/<label>_<n>.csv
 # Usage: python record.py <label> <seconds>     e.g. python record.py walking 20
 # Each run gets a new file: walking_1.csv, walking_2.csv, ...
+#
+# Each row is one raw packet: time,rssi,v0,...,v127 (the same values the
+# firmware prints in a CSI_DATA line). train.py turns these raw per-packet
+# rows into windowed features itself -- see features.load_raw_session().
 
 import os, sys, time
 import serial

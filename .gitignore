@@ -9,5 +9,9 @@ managed_components/
 .venv/
 __pycache__/
 
+# ML pipeline: the trained model is generated locally and easy to recreate
+# from data/ (which the team commits intentionally, to share recordings)
+model.pkl
+
 # macOS
 .DS_Store
