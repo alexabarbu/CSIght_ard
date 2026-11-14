@@ -94,6 +94,28 @@ def motion_score(features: Dict[str, float]) -> float:
     return features.get("mean_time_std", float("nan"))
 
 
+# Hardcoded from a live reading on the current device placement: empty room
+# sits at -61/-62 dBm, someone in the room pushes it to -63 dBm or below.
+# These are NOT portable to a different room/placement/day -- recalibrate by
+# watching mean_rssi live (e.g. via this module's CLI) if anything moves.
+RSSI_EMPTY_THRESHOLD = -62
+RSSI_OCCUPIED_THRESHOLD = -63
+
+
+def rssi_occupancy(features: Dict[str, float]) -> str:
+    """Hardcoded RSSI-based occupancy check. Returns "empty" if mean_rssi is
+    at or above RSSI_EMPTY_THRESHOLD, "occupied" if at or below
+    RSSI_OCCUPIED_THRESHOLD, else "uncertain" for the small gap between."""
+    rssi = features.get("mean_rssi", float("nan"))
+    if np.isnan(rssi):
+        return "uncertain"
+    if rssi >= RSSI_EMPTY_THRESHOLD:
+        return "empty"
+    if rssi <= RSSI_OCCUPIED_THRESHOLD:
+        return "occupied"
+    return "uncertain"
+
+
 def sliding_windows(
     packets: Iterable[Packet],
     window_seconds: float = DEFAULT_WINDOW_SECONDS,

@@ -123,19 +123,23 @@ def load_data(data_dir: str = "data") -> pd.DataFrame:
 
 def session_split(df: pd.DataFrame, test_fraction: float = 0.25, seed: int = 0):
     """Hold out whole sessions per label for test, never splitting a session
-    across train and test."""
+    across train and test. Synthetic sessions (session_id starting with
+    "synth_", see augment.py) are never chosen as test -- only real,
+    independently-recorded sessions can be held out, so reported accuracy
+    always reflects genuine generalization, not bootstrap-augmented rows."""
     rng = np.random.RandomState(seed)
     train_idx, test_idx = [], []
 
     for label, group in df.groupby("label"):
         sessions = sorted(group["session_id"].unique())
-        if len(sessions) < 2:
-            print(f"warning: label {label!r} has only {len(sessions)} session(s); "
+        real_sessions = [s for s in sessions if not s.startswith("synth_")]
+        if len(real_sessions) < 2:
+            print(f"warning: label {label!r} has only {len(real_sessions)} real session(s); "
                   f"can't hold one out -- all its rows go to train")
             train_idx.extend(group.index)
             continue
 
-        shuffled = list(sessions)
+        shuffled = list(real_sessions)
         rng.shuffle(shuffled)
         n_test = max(1, round(len(shuffled) * test_fraction))
         test_sessions = set(shuffled[:n_test])

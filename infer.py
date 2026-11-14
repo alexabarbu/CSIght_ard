@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Tuple
 import joblib
 import numpy as np
 
-from features import Packet, extract_features
+from features import Packet, extract_features, rssi_occupancy
 
 
 def load_model(path: str = "model.pkl") -> Optional[dict]:
@@ -28,11 +28,22 @@ def load_model(path: str = "model.pkl") -> Optional[dict]:
 
 
 def predict(window: List[Packet], model_bundle: Optional[dict]) -> Tuple[str, float, Dict[str, float]]:
-    """Returns (label, confidence, feature_dict). Never raises."""
+    """Returns (label, confidence, feature_dict). Never raises.
+
+    RSSI decides empty vs. occupied first (see features.rssi_occupancy --
+    hardcoded thresholds calibrated live on the current setup). The trained
+    model only picks between standing/walking once RSSI says someone is
+    there, and decides freely in the small uncertain gap between the two
+    RSSI thresholds.
+    """
     try:
         feats = extract_features(window)
         if model_bundle is None or feats.get("n_packets", 0) == 0:
             return "unknown", 0.0, feats
+
+        occupancy = rssi_occupancy(feats)
+        if occupancy == "empty":
+            return "empty", 1.0, feats
 
         feature_names = model_bundle["feature_names"]
         values = [feats[name] for name in feature_names]
@@ -41,8 +52,15 @@ def predict(window: List[Packet], model_bundle: Optional[dict]) -> Tuple[str, fl
 
         model = model_bundle["model"]
         proba = model.predict_proba([values])[0]
-        best_idx = int(np.argmax(proba))
-        label = str(model.classes_[best_idx])
+        classes = model.classes_
+
+        if occupancy == "occupied":
+            allowed = [i for i, c in enumerate(classes) if c != "empty"]
+            best_idx = max(allowed, key=lambda i: proba[i])
+        else:  # "uncertain" -- let the model decide freely among all 3 classes
+            best_idx = int(np.argmax(proba))
+
+        label = str(classes[best_idx])
         return label, float(proba[best_idx]), feats
     except Exception as exc:
         print(f"infer: prediction failed: {exc}", file=sys.stderr)
