@@ -9,5 +9,9 @@ managed_components/
 .venv/
 __pycache__/
 
+# ML pipeline: recorded sessions and trained model are generated locally
+data/
+model.pkl
+
 # macOS
 .DS_Store
